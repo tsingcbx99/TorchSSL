@@ -42,8 +42,9 @@ def sample_labeled_data(args, data, target,
 
     dump_path = os.path.join(args.save_dir, args.save_name, 'sampled_label_idx.npy')
 
+    # TODO 这里其实实现了如果有的话直接读取进来
     if os.path.exists(dump_path):
-        lb_idx = np.load(dump_path)
+        lb_idx = np.load(dump_path, allow_pickle=True)
         lb_data = data[lb_idx]
         lbs = target[lb_idx]
         return lb_data, lbs, lb_idx

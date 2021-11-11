@@ -216,7 +216,9 @@ class SSL_Dataset:
         self.train = train
         self.num_classes = num_classes
         self.data_dir = data_dir
+        # TODO crop size
         crop_size = 96 if self.name.upper() == 'STL10' else 224 if self.name.upper() == 'IMAGENET' else 32
+        # TODO transform比较简单
         self.transform = get_transform(mean[name], std[name], crop_size, train)
 
     def get_data(self, svhn_extra=True):
@@ -286,6 +288,7 @@ class SSL_Dataset:
         Args:
             num_labels: number of labeled data.
             index: If index of np.array is given, labeled data is not randomly sampled, but use index for sampling.
+            TODO labeled data也会参与到unsupervised loss中
             include_lb_to_ulb: If True, consistency regularization is also computed for the labeled data.
             strong_transform: list of strong transform (RandAugment in FixMatch)
             onehot: If True, the target is converted into onehot vector.

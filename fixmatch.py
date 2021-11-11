@@ -25,6 +25,7 @@ def main(args):
     main(args) spawn each process (main_worker) to each GPU.
     '''
 
+    # TODO 用新的save path，放入一个上次sample的结果 并且传入resume和load path即可
     save_path = os.path.join(args.save_dir, args.save_name)
     if os.path.exists(save_path) and not args.overwrite:
         raise Exception('already existing model: {}'.format(save_path))
@@ -104,6 +105,7 @@ def main_worker(gpu, ngpus_per_node, args):
     args.bn_momentum = 1.0 - 0.999
     if 'imagenet' in args.dataset.lower():
         _net_builder = net_builder('ResNet50', False, None, is_remix=False)
+        # TODO lr
         args.lr = 0.1
     else:
         _net_builder = net_builder(args.net,
@@ -180,19 +182,21 @@ def main_worker(gpu, ngpus_per_node, args):
     # Construct Dataset & DataLoader
     if args.dataset != "imagenet":
         train_dset = SSL_Dataset(args, alg='fixmatch', name=args.dataset, train=True,
-                                num_classes=args.num_classes, data_dir=args.data_dir)
+                                 num_classes=args.num_classes, data_dir=args.data_dir)
+        # TODO 没有传入strong augmentation
         lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels)
 
         _eval_dset = SSL_Dataset(args, alg='fixmatch', name=args.dataset, train=False,
-                                num_classes=args.num_classes, data_dir=args.data_dir)
+                                 num_classes=args.num_classes, data_dir=args.data_dir)
         eval_dset = _eval_dset.get_dset()
     else:
+        # TODO ImageNet用了不一样的处理
         image_loader = ImageNetLoader(root_path=args.data_dir, num_labels=args.num_labels,
                                       num_class=args.num_classes)
         lb_dset = image_loader.get_lb_train_data()
         ulb_dset = image_loader.get_ulb_train_data()
         eval_dset = image_loader.get_lb_test_data()
-                            
+
     loader_dict = {}
     dset_dict = {'train_lb': lb_dset, 'train_ulb': ulb_dset, 'eval': eval_dset}
 
@@ -268,6 +272,7 @@ if __name__ == "__main__":
                         help='total number of training iterations')
     parser.add_argument('--num_eval_iter', type=int, default=5000,
                         help='evaluation frequency')
+    # TODO fix match是没有warm up这个阶段的
     parser.add_argument('-nl', '--num_labels', type=int, default=40)
     parser.add_argument('-bsz', '--batch_size', type=int, default=64)
     parser.add_argument('--uratio', type=int, default=7,

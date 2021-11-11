@@ -50,6 +50,7 @@ class BasicDataset(Dataset):
         if self.is_ulb:
             if strong_transform is None:
                 self.strong_transform = copy.deepcopy(transform)
+                # TODO strong augmentation的处理会比较麻烦
                 self.strong_transform.transforms.insert(0, RandAugment(3, 5))
         else:
             self.strong_transform = strong_transform
@@ -81,6 +82,7 @@ class BasicDataset(Dataset):
             if not self.is_ulb:
                 return idx, img_w, target
             else:
+                # TODO 每一个算法额外写一个
                 if self.alg == 'fixmatch':
                     return idx, img_w, self.strong_transform(img)
                 elif self.alg == 'flexmatch':

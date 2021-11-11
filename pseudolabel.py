@@ -148,6 +148,7 @@ def main_worker(gpu, ngpus_per_node, args):
             '''
             args.batch_size = int(args.batch_size / ngpus_per_node)
             model.model.cuda(args.gpu)
+            # TODO sync BN
             model.model = nn.SyncBatchNorm.convert_sync_batchnorm(model.model)
             model.model = torch.nn.parallel.DistributedDataParallel(model.model,
                                                                     device_ids=[args.gpu],

@@ -142,8 +142,10 @@ class FixMatch:
 
             # inference and calculate sup/unsup losses
             with amp_cm():
+                # TODO fix match是concat输入的
                 logits = self.model(inputs)
                 logits_x_lb = logits[:num_lb]
+                # TODO 其实没有用到ema teacher
                 logits_x_ulb_w, logits_x_ulb_s = logits[num_lb:].chunk(2)
                 sup_loss = ce_loss(logits_x_lb, y_lb, reduction='mean')
 
@@ -279,6 +281,8 @@ class FixMatch:
                     'it': self.it,
                     'ema_model': ema_model},
                    save_filename)
+
+        # TODO 这里我们不考虑10类的几个dataset
         if self.num_classes == 10:
             tb_path = os.path.join(save_path, 'tensorboard')
             if not os.path.exists(tb_path):

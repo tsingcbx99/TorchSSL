@@ -1,5 +1,5 @@
 save_dir: ./saved_models
-save_name: pseudolabel_cifar100_400_1
+save_name: clean_baseline_cifar100_400_1
 resume: False
 load_path: None
 overwrite: True

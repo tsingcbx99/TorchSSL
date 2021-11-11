@@ -67,9 +67,10 @@ class FullySupervised:
 
         # lb: labeled, ulb: unlabeled
         self.model.train()
+        # TODO 多余的ema
         self.ema = EMA(self.model, self.ema_m)
         self.ema.register()
-        if args.resume == True:
+        if args.resume:
             self.ema.load(self.ema_model)
 
         # for gpu profiling
@@ -81,11 +82,12 @@ class FullySupervised:
         start_batch.record()
         best_eval_acc, best_it = 0.0, 0
 
+        # TODO amp加速
         scaler = GradScaler()
         amp_cm = autocast if args.amp else contextlib.nullcontext
 
         # eval for once to verify if the checkpoint is loaded correctly
-        if args.resume == True:
+        if args.resume:
             eval_dict = self.evaluate(args=args)
             print(eval_dict)
 
@@ -120,6 +122,7 @@ class FullySupervised:
                 scaler.step(self.optimizer)
                 scaler.update()
             else:
+                # TODO amp 其实没用到
                 total_loss.backward()
                 if (args.clip > 0):
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)

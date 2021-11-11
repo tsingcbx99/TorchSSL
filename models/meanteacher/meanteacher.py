@@ -115,6 +115,7 @@ class MeanTeacher:
 
             # inference and calculate sup/unsup losses
             with amp_cm():
+                # TODO mean teacher却是分两次输入
                 logits_x_lb = self.model(x_lb)
 
                 self.bn_controller.freeze_bn(self.model)

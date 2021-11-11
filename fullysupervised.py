@@ -100,10 +100,12 @@ def main_worker(gpu, ngpus_per_node, args):
     logger = get_logger(args.save_name, save_path, logger_level)
     logger.warning(f"USE GPU: {args.gpu} for training")
 
+    # TODO bn momentum 是一个没有意义的参数
     args.bn_momentum = 1.0 - 0.999
     if 'imagenet' in args.dataset.lower():
         _net_builder = net_builder('ResNet50', False, None, is_remix=False)
     else:
+        # TODO 注意一下wide resnet的初始化
         _net_builder = net_builder(args.net,
                                    args.net_from_name,
                                    {'first_stride': 2 if 'stl' in args.dataset else 1,
@@ -116,6 +118,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                     'is_remix': False},
                                    )
 
+    # TODO 在这里写mdd
     model = FullySupervised(_net_builder,
                             args.num_classes,
                             num_eval_iter=args.num_eval_iter,
@@ -127,7 +130,9 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # SET Optimizer & LR Scheduler
     ## construct SGD and cosine lr scheduler
+    # TODO optimizer中没有0.1倍学习率，并且bias和bn都没有weight decay，optimizer是SGD
     optimizer = get_optimizer(model.model, args.optim, args.lr, args.momentum, args.weight_decay)
+    # TODO 很多算法都没有warmup，cosine lr decay
     scheduler = get_cosine_schedule_with_warmup(optimizer,
                                                 args.num_train_iter,
                                                 num_warmup_steps=args.num_train_iter * 0)
@@ -182,6 +187,7 @@ def main_worker(gpu, ngpus_per_node, args):
     loader_dict = {}
     dset_dict = {'train_lb': lb_dset, 'eval': eval_dset}
 
+    # TODO get data loader函数略显玄学
     loader_dict['train_lb'] = get_data_loader(dset_dict['train_lb'],
                                               args.batch_size,
                                               data_sampler=args.train_sampler,
@@ -200,9 +206,11 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # If args.resume, load checkpoints from args.load_path
     if args.resume:
+        # TODO 在这里读入pretrain model
         model.load_model(args.load_path)
 
     # START TRAINING
+    # TODO sb写法，直接model.train(args)不就完了
     trainer = model.train
     for epoch in range(args.epoch):
         trainer(args)
@@ -265,6 +273,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=3e-2)
     parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--weight_decay', type=float, default=5e-4)
+    # TODO amp = False
     parser.add_argument('--amp', type=str2bool, default=False, help='use mixed precision training or not')
     parser.add_argument('--clip', type=float, default=0)
 
