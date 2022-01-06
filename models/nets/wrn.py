@@ -108,21 +108,21 @@ class WideResNet(nn.Module):
                 nn.init.xavier_normal_(m.weight.data)
                 m.bias.data.zero_()
 
-    def forward(self, x, ood_test=False):
-        out = self.conv1(x)
-        out = self.block1(out)
-        out = self.block2(out)
-        out = self.block3(out)
-        out = self.relu(self.bn1(out))
-        out = F.adaptive_avg_pool2d(out, 1)
-        out = out.view(-1, self.channels)
-        output = self.fc(out)
+    def forward(self, x, return_features=False):
+        f = self.conv1(x)
+        f = self.block1(f)
+        f = self.block2(f)
+        f = self.block3(f)
+        f = self.relu(self.bn1(f))
+        f = F.adaptive_avg_pool2d(f, 1)
+        f = f.view(-1, self.channels)
+        output = self.fc(f)
 
-        if ood_test:
-            return output, out
+        if return_features:
+            return output, f
         else:
             if self.is_remix:
-                rot_output = self.rot_classifier(out)
+                rot_output = self.rot_classifier(f)
                 return output, rot_output
             else:
                 return output
@@ -134,7 +134,6 @@ class build_WideResNet:
         self.first_stride = first_stride
         self.depth = depth
         self.widen_factor = widen_factor
-        self.bn_momentum = bn_momentum
         self.dropRate = dropRate
         self.leaky_slope = leaky_slope
         self.use_embed = use_embed

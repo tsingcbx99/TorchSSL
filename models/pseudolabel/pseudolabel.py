@@ -15,15 +15,14 @@ from copy import deepcopy
 
 
 class PseudoLabel:
-    def __init__(self, net_builder, num_classes, lambda_u,
-                 num_eval_iter=1000, tb_log=None, ema_m=0.999, logger=None):
+    def __init__(self, model, num_classes, lambda_u,
+                 num_eval_iter=1000, tb_log=None, logger=None):
         """
         class PseudoLabel contains setter of data_loader, optimizer, and model update methods.
         Args:
-            net_builder: backbone network class (see net_builder in utils.py)
+            model: network
             num_classes: # of label classes 
             lambda_u: ratio of unsupervised loss to supervised loss
-            it: initial iteration count
             num_eval_iter: frequency of evaluation.
             tb_log: tensorboard writer (see train_utils.py)
             logger: logger (see utils.py)
@@ -35,14 +34,7 @@ class PseudoLabel:
         self.loader = {}
         self.num_classes = num_classes
 
-        self.ema_m = ema_m
-        # create the encoders
-        # network is builded only by num_classes,
-        # other configs are covered in main.py
-
-        self.model = net_builder(num_classes=num_classes)
-        self.ema_model = deepcopy(self.model)
-
+        self.model = model
         self.num_eval_iter = num_eval_iter
         self.lambda_u = lambda_u
         self.tb_log = tb_log
@@ -54,8 +46,6 @@ class PseudoLabel:
 
         self.logger = logger
         self.print_fn = print if logger is None else logger.info
-
-        self.bn_controller = Bn_Controller()
 
     def set_data_loader(self, loader_dict):
         self.loader_dict = loader_dict
@@ -74,10 +64,6 @@ class PseudoLabel:
 
         # EMA init
         self.model.train()
-        self.ema = EMA(self.model, self.ema_m)
-        self.ema.register()
-        if args.resume == True:
-            self.ema.load(self.ema_model)
 
         # for gpu profiling
         start_batch = torch.cuda.Event(enable_timing=True)
@@ -88,17 +74,10 @@ class PseudoLabel:
         start_batch.record()
         best_eval_acc, best_it = 0.0, 0
 
-        scaler = GradScaler()
-        amp_cm = autocast if args.amp else contextlib.nullcontext
-
         # eval for once to verify if the checkpoint is loaded correctly
-        if args.resume == True:
+        if args.resume:
             eval_dict = self.evaluate(args=args)
             print(eval_dict)
-
-        selected_label = torch.ones((len(self.ulb_dset),), dtype=torch.long, ) * -1
-        selected_label = selected_label.cuda(args.gpu)
-        classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
 
         for _, x_lb, y_lb in self.loader_dict['train_lb']:
 
@@ -112,38 +91,19 @@ class PseudoLabel:
             x_lb, x_lb.cuda(args.gpu)
             y_lb = y_lb.cuda(args.gpu)
 
-            num_lb = x_lb.shape[0]
-            if args.use_flex:
-                pseudo_counter = Counter(selected_label.tolist())
-                if max(pseudo_counter.values()) < len(self.ulb_dset):  # not all(5w) -1
-                    for i in range(args.num_classes):
-                        classwise_acc[i] = pseudo_counter[i] / max(pseudo_counter.values())
-
             # inference and calculate sup/unsup losses
-            with amp_cm():
-
-                logits_x_lb = self.model(x_lb)
-
-                sup_loss = ce_loss(logits_x_lb, y_lb, reduction='mean')
-
-                total_loss = sup_loss
+            logits_x_lb = self.model(x_lb)
+            sup_loss = ce_loss(logits_x_lb, y_lb, reduction='mean')
+            total_loss = sup_loss
 
             # parameter updates
-            if args.amp:
-                scaler.scale(total_loss).backward()
-                if args.clip > 0:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)
-                scaler.step(self.optimizer)
-                scaler.update()
-            else:
-                total_loss.backward()
-                if args.clip > 0:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)
-                self.optimizer.step()
-
-            self.scheduler.step()
-            self.ema.update()
             self.model.zero_grad()
+            total_loss.backward()
+            if args.clip > 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.clip)
+
+            self.optimizer.step()
+            self.scheduler.step()
 
             end_run.record()
             torch.cuda.synchronize()
@@ -166,7 +126,6 @@ class PseudoLabel:
             if self.it % self.num_eval_iter == 0:
                 eval_dict = self.evaluate(args=args)
                 tb_dict.update(eval_dict)
-
                 save_path = os.path.join(args.save_dir, args.save_name)
 
                 if tb_dict['eval/top-1-acc'] > best_eval_acc:
@@ -198,7 +157,6 @@ class PseudoLabel:
     @torch.no_grad()
     def evaluate(self, eval_loader=None, args=None):
         self.model.eval()
-        self.ema.apply_shadow()
         if eval_loader is None:
             eval_loader = self.loader_dict['eval']
         total_loss = 0.0
@@ -224,27 +182,16 @@ class PseudoLabel:
         AUC = roc_auc_score(y_true, y_logits, multi_class='ovo')
         cf_mat = confusion_matrix(y_true, y_pred, normalize='true')
         self.print_fn('confusion matrix:\n' + np.array_str(cf_mat))
-        self.ema.restore()
         self.model.train()
         return {'eval/loss': total_loss / total_num, 'eval/top-1-acc': top1, 'eval/top-5-acc': top5,
                 'eval/precision': precision, 'eval/recall': recall, 'eval/F1': F1, 'eval/AUC': AUC}
 
     def save_model(self, save_name, save_path):
-        if self.it < 1000000:
-            return
         save_filename = os.path.join(save_path, save_name)
-        # copy EMA parameters to ema_model for saving with model as temp
-        self.model.eval()
-        self.ema.apply_shadow()
-        ema_model = self.model.state_dict()
-        self.ema.restore()
-        self.model.train()
-
         torch.save({'model': self.model.state_dict(),
                     'optimizer': self.optimizer.state_dict(),
                     'scheduler': self.scheduler.state_dict(),
-                    'it': self.it,
-                    'ema_model': ema_model},
+                    'it': self.it},
                    save_filename)
 
         self.print_fn(f"model saved: {save_filename}")
@@ -256,28 +203,5 @@ class PseudoLabel:
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.scheduler.load_state_dict(checkpoint['scheduler'])
         self.it = checkpoint['it']
-        self.ema_model.load_state_dict(checkpoint['ema_model'])
         self.print_fn('model loaded')
 
-    # Abandoned in Pseudo Label
-    def interleave_offsets(self, batch, nu):
-        groups = [batch // (nu + 1)] * (nu + 1)
-        for x in range(batch - sum(groups)):
-            groups[-x - 1] += 1
-        offsets = [0]
-        for g in groups:
-            offsets.append(offsets[-1] + g)
-        assert offsets[-1] == batch
-        return offsets
-
-    def interleave(self, xy, batch):
-        nu = len(xy) - 1
-        offsets = self.interleave_offsets(batch, nu)
-        xy = [[v[offsets[p]:offsets[p + 1]] for p in range(nu + 1)] for v in xy]
-        for i in range(1, nu + 1):
-            xy[0][i], xy[i][i] = xy[i][i], xy[0][i]
-        return [torch.cat(v, dim=0) for v in xy]
-
-
-if __name__ == "__main__":
-    pass

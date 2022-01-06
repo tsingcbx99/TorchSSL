@@ -1,7 +1,7 @@
 save_dir: ./saved_models
-save_name: fixmatch_cifar100_10000_resume
-resume: True
-load_path: ./saved_models/fixmatch_cifar100_10000_1/latest_model.pth
+save_name: fixmatch_cifar100_10000_1
+resume: False
+load_path: None
 overwrite: True
 epoch: 1
 num_train_iter: 1048576
